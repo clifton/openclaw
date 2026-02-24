@@ -6,8 +6,11 @@ const trimStringPreprocess = (value: unknown) => (typeof value === "string" ? va
 const trimLowercaseStringPreprocess = (value: unknown) =>
   normalizeOptionalLowercaseString(value) ?? value;
 
-const DeliveryModeFieldSchema = z
-  .preprocess(trimLowercaseStringPreprocess, z.enum(["deliver", "announce", "none", "webhook"]))
+export const DeliveryModeFieldSchema = z
+  .preprocess(
+    trimLowercaseStringPreprocess,
+    z.enum(["deliver", "announce", "direct", "none", "webhook"]),
+  )
   .transform((value) => (value === "deliver" ? "announce" : value));
 
 export const LowercaseNonEmptyStringFieldSchema = z.preprocess(
@@ -30,8 +33,8 @@ export const TimeoutSecondsFieldSchema = z
   .finite()
   .transform((value) => Math.max(0, value));
 
-type ParsedDeliveryInput = {
-  mode?: "announce" | "none" | "webhook";
+export type ParsedDeliveryInput = {
+  mode?: "announce" | "direct" | "none" | "webhook";
   channel?: string;
   to?: string;
   threadId?: string | number;

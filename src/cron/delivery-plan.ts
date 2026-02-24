@@ -50,13 +50,15 @@ export function resolveCronDeliveryPlan(job: CronJob): CronDeliveryPlan {
   const mode =
     normalizedMode === "announce"
       ? "announce"
-      : normalizedMode === "webhook"
-        ? "webhook"
-        : normalizedMode === "none"
-          ? "none"
-          : normalizedMode === "deliver"
-            ? "announce"
-            : undefined;
+      : normalizedMode === "direct"
+        ? "direct"
+        : normalizedMode === "webhook"
+          ? "webhook"
+          : normalizedMode === "none"
+            ? "none"
+            : normalizedMode === "deliver"
+              ? "announce"
+              : undefined;
 
   const deliveryChannel = normalizeChannel(
     (delivery as { channel?: unknown } | undefined)?.channel,
@@ -65,24 +67,23 @@ export function resolveCronDeliveryPlan(job: CronJob): CronDeliveryPlan {
   const deliveryThreadId = normalizeOptionalThreadValue(
     (delivery as { threadId?: unknown } | undefined)?.threadId,
   );
-  const to = deliveryTo;
   const deliveryAccountId = normalizeOptionalString(
     (delivery as { accountId?: unknown } | undefined)?.accountId,
   );
   if (hasDelivery) {
     const resolvedMode = mode ?? "announce";
     const channel =
-      resolvedMode === "announce"
-        ? resolveAnnounceChannel({ channel: deliveryChannel, to })
+      resolvedMode === "announce" || resolvedMode === "direct"
+        ? resolveAnnounceChannel({ channel: deliveryChannel, to: deliveryTo })
         : deliveryChannel;
     return {
       mode: resolvedMode,
       channel: resolvedMode === "webhook" ? undefined : channel,
-      to,
+      to: deliveryTo,
       threadId: resolvedMode === "webhook" ? undefined : deliveryThreadId,
       accountId: deliveryAccountId,
       source: "delivery",
-      requested: resolvedMode === "announce",
+      requested: resolvedMode === "announce" || resolvedMode === "direct",
     };
   }
 

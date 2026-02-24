@@ -891,9 +891,14 @@ export async function dispatchCronDelivery(
 
     // Finalize descendant/subagent output first for text-only cron runs, then
     // send through the real outbound adapter so delivered=true always reflects
-    // an actual channel send instead of internal announce routing.
+    // an actual channel send instead of internal announce routing. Explicit
+    // direct mode, structured payloads, and topic-bound targets still bypass
+    // finalization and go straight to direct delivery.
+    const cronDeliveryMode = params.job.delivery?.mode;
     const useDirectDelivery =
-      params.deliveryPayloadHasStructuredContent || params.resolvedDelivery.threadId != null;
+      cronDeliveryMode === "direct" ||
+      params.deliveryPayloadHasStructuredContent ||
+      params.resolvedDelivery.threadId != null;
     if (useDirectDelivery) {
       const directResult = await deliverViaDirectAndCleanup(params.resolvedDelivery);
       if (directResult) {

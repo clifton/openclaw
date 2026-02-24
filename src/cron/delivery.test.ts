@@ -192,6 +192,34 @@ describe("resolveCronDeliveryPlan", () => {
     expect(plan.channel).toBe("last");
     expect(plan.to).toBe("imessage:+15551234567");
   });
+
+  it("resolves direct mode with channel routing and requested=true", () => {
+    const plan = resolveCronDeliveryPlan(
+      makeCronJob({
+        delivery: { mode: "direct", channel: "telegram", to: "123" },
+      }),
+    );
+    expect(plan.mode).toBe("direct");
+    expect(plan.requested).toBe(true);
+    expect(plan.channel).toBe("telegram");
+    expect(plan.to).toBe("123");
+  });
+
+  it("uses a provider-prefixed direct target as the channel when channel is last", () => {
+    const plan = resolveCronDeliveryPlan(
+      makeCronJob({
+        delivery: {
+          mode: "direct",
+          channel: "last",
+          to: "telegram:123",
+        },
+      }),
+    );
+    expect(plan.mode).toBe("direct");
+    expect(plan.requested).toBe(true);
+    expect(plan.channel).toBe("telegram");
+    expect(plan.to).toBe("telegram:123");
+  });
 });
 
 describe("resolveFailureDestination", () => {

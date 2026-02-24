@@ -633,6 +633,21 @@ describe("normalizeCronJobCreate", () => {
     expect(normalized.wakeMode).toBe("now");
   });
 
+  it("preserves direct delivery mode", () => {
+    const normalized = normalizeCronJobCreate({
+      name: "direct test",
+      enabled: true,
+      schedule: { kind: "cron", expr: "0 9 * * *" },
+      sessionTarget: "isolated",
+      wakeMode: "now",
+      payload: { kind: "agentTurn", message: "test" },
+      delivery: { mode: "direct", channel: "telegram", to: "123" },
+    }) as unknown as Record<string, unknown>;
+    const delivery = normalized.delivery as Record<string, unknown>;
+    expect(delivery.mode).toBe("direct");
+    expect(delivery.channel).toBe("telegram");
+  });
+
   it("strips invalid delivery mode from partial delivery objects", () => {
     const normalized = normalizeCronJobCreate({
       name: "delivery mode",

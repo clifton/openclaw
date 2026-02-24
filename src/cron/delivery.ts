@@ -27,7 +27,6 @@ export {
   type CronFailureDeliveryPlan,
   type CronFailureDestinationInput,
 };
-
 const FAILURE_NOTIFICATION_TIMEOUT_MS = 30_000;
 const cronDeliveryLogger = getChildLogger({ subsystem: "cron-delivery" });
 
