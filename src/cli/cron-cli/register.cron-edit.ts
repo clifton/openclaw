@@ -100,6 +100,7 @@ export function registerCronEditCommand(cron: Command) {
       .option("--tools <list>", "Tool allow-list (e.g. exec,read,write or exec read write)")
       .option("--clear-tools", "Remove tool allow-list (use all tools)", false)
       .option("--announce", "Fallback-deliver final text to a chat")
+      .option("--direct", "Send raw output directly to channel (preserves formatting)")
       .option("--deliver", "Deprecated (use --announce). Fallback-delivers final text to a chat.")
       .option("--no-deliver", "Disable runner fallback delivery")
       .option("--channel <channel>", `Delivery channel (${getCronChannelOptions()})`)
@@ -151,8 +152,11 @@ export function registerCronEditCommand(cron: Command) {
               "Isolated jobs cannot use --system-event; use --message or --session main.",
             );
           }
-          if (opts.announce && typeof opts.deliver === "boolean") {
-            throw new Error("Choose --announce or --no-deliver (not multiple).");
+          if (
+            [opts.announce, opts.direct, typeof opts.deliver === "boolean"].filter(Boolean).length >
+            1
+          ) {
+            throw new Error("Choose one of --announce, --direct, or --no-deliver.");
           }
           const patch: Record<string, unknown> = {};
           if (typeof opts.name === "string") {
@@ -230,7 +234,8 @@ export function registerCronEditCommand(cron: Command) {
             ? Number.parseInt(String(opts.timeoutSeconds), 10)
             : undefined;
           const hasTimeoutSeconds = Boolean(timeoutSeconds && Number.isFinite(timeoutSeconds));
-          const hasDeliveryModeFlag = opts.announce || typeof opts.deliver === "boolean";
+          const hasDeliveryModeFlag =
+            opts.announce || opts.direct || typeof opts.deliver === "boolean";
           const threadId = parseCronThreadIdOption(opts.threadId);
           const hasDeliveryThreadId = typeof threadId === "number";
           const hasDeliveryTarget =
@@ -279,13 +284,14 @@ export function registerCronEditCommand(cron: Command) {
           }
 
           if (hasDeliveryModeFlag || hasDeliveryTarget || hasDeliveryAccount || hasBestEffort) {
-            const delivery: Record<string, unknown> = {};
-            if (hasDeliveryModeFlag) {
-              delivery.mode = opts.announce || opts.deliver === true ? "announce" : "none";
-            } else if (hasBestEffort) {
-              // Back-compat: toggling best-effort alone has historically implied announce mode.
-              delivery.mode = "announce";
-            }
+            const deliveryMode = opts.direct
+              ? "direct"
+              : opts.announce || opts.deliver === true
+                ? "announce"
+                : opts.deliver === false
+                  ? "none"
+                  : "announce";
+            const delivery: Record<string, unknown> = { mode: deliveryMode };
             if (typeof opts.channel === "string") {
               const channel = opts.channel.trim();
               delivery.channel = channel ? channel : undefined;

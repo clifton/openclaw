@@ -104,6 +104,7 @@ export function registerCronAddCommand(cron: Command) {
       .option("--light-context", "Use lightweight bootstrap context for agent jobs", false)
       .option("--tools <list>", "Tool allow-list (e.g. exec,read,write or exec read write)")
       .option("--announce", "Fallback-deliver final text to a chat", false)
+      .option("--direct", "Send raw output directly to channel (preserves formatting)", false)
       .option("--deliver", "Deprecated (use --announce). Fallback-delivers final text to a chat.")
       .option("--no-deliver", "Disable runner fallback delivery")
       .option("--channel <channel>", `Delivery channel (${getCronChannelOptions()})`, "last")
@@ -135,10 +136,11 @@ export function registerCronAddCommand(cron: Command) {
           const agentId = rawAgentId ? sanitizeAgentId(rawAgentId) : undefined;
 
           const hasAnnounce = Boolean(opts.announce) || opts.deliver === true;
+          const hasDirect = Boolean(opts.direct);
           const hasNoDeliver = opts.deliver === false;
-          const deliveryFlagCount = [hasAnnounce, hasNoDeliver].filter(Boolean).length;
+          const deliveryFlagCount = [hasAnnounce, hasDirect, hasNoDeliver].filter(Boolean).length;
           if (deliveryFlagCount > 1) {
-            throw new Error("Choose at most one of --announce or --no-deliver");
+            throw new Error("Choose at most one of --announce, --direct, or --no-deliver");
           }
 
           const payload = (() => {
@@ -195,10 +197,12 @@ export function registerCronAddCommand(cron: Command) {
             throw new Error("Isolated/current/custom-session jobs require --message (agentTurn).");
           }
           if (
-            (opts.announce || typeof opts.deliver === "boolean") &&
+            (opts.announce || opts.direct || typeof opts.deliver === "boolean") &&
             (!isIsolatedLikeSessionTarget || payload.kind !== "agentTurn")
           ) {
-            throw new Error("--announce/--no-deliver require a non-main agentTurn session target.");
+            throw new Error(
+              "--announce/--direct/--no-deliver require a non-main agentTurn session target.",
+            );
           }
 
           const accountId = normalizeOptionalString(opts.account);
@@ -216,11 +220,13 @@ export function registerCronAddCommand(cron: Command) {
 
           const deliveryMode =
             isIsolatedLikeSessionTarget && payload.kind === "agentTurn"
-              ? hasAnnounce
-                ? "announce"
-                : hasNoDeliver
-                  ? "none"
-                  : "announce"
+              ? hasDirect
+                ? "direct"
+                : hasAnnounce
+                  ? "announce"
+                  : hasNoDeliver
+                    ? "none"
+                    : "announce"
               : undefined;
 
           const name = normalizeOptionalString(opts.name) ?? "";
