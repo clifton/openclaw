@@ -1,12 +1,16 @@
-import type { FileContents, FileDiffMetadata, SupportedLanguages } from "@pierre/diffs";
-import { parsePatchFiles } from "@pierre/diffs";
-import { preloadFileDiff, preloadMultiFileDiff } from "@pierre/diffs/ssr";
+import fs from "node:fs/promises";
+import { createRequire } from "node:module";
+import type {
+  FileContents,
+  FileDiffMetadata,
+  SupportedLanguages,
+  ThemeRegistrationResolved,
+} from "@pierre/diffs";
 import {
   collectDiffPayloadLanguageHints,
   normalizeDiffViewerPayloadLanguages,
   normalizeSupportedLanguageHint,
 } from "./language-hints.js";
-import { ensurePierreThemesRegistered } from "./pierre-themes.js";
 import type {
   DiffInput,
   DiffRenderOptions,
@@ -20,6 +24,78 @@ const DEFAULT_FILE_NAME = "diff.txt";
 const MAX_PATCH_FILE_COUNT = 128;
 const MAX_PATCH_TOTAL_LINES = 120_000;
 const VIEWER_LOADER_DOCUMENT_PATH = "../../assets/viewer.js";
+const themeRequire = createRequire(import.meta.url);
+
+type PierreDiffsModule = typeof import("@pierre/diffs");
+type PierreDiffsSsrModule = typeof import("@pierre/diffs/ssr");
+type PreloadedFileDiffResult = {
+  fileDiff: FileDiffMetadata;
+  prerenderedHTML: string;
+};
+type PreloadedMultiFileDiffResult = {
+  oldFile: FileContents;
+  newFile: FileContents;
+  prerenderedHTML: string;
+};
+
+let pierreDiffsPromise: Promise<PierreDiffsModule> | undefined;
+let pierreDiffsSsrPromise: Promise<PierreDiffsSsrModule> | undefined;
+
+let pierreThemesPatched = false;
+let pierreThemePatchPromise: Promise<void> | undefined;
+
+async function loadPierreDiffs(): Promise<PierreDiffsModule> {
+  pierreDiffsPromise ??= import("@pierre/diffs");
+  return await pierreDiffsPromise;
+}
+
+async function loadPierreDiffsSsr(): Promise<PierreDiffsSsrModule> {
+  pierreDiffsSsrPromise ??= import("@pierre/diffs/ssr");
+  return await pierreDiffsSsrPromise;
+}
+
+function createThemeLoader(
+  themeName: "pierre-dark" | "pierre-light",
+  themePath: string,
+): () => Promise<ThemeRegistrationResolved> {
+  let cachedTheme: ThemeRegistrationResolved | undefined;
+  return async () => {
+    if (cachedTheme) {
+      return cachedTheme;
+    }
+    const raw = await fs.readFile(themePath, "utf8");
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    cachedTheme = {
+      ...parsed,
+      name: themeName,
+    } as ThemeRegistrationResolved;
+    return cachedTheme;
+  };
+}
+
+async function ensurePierreThemeLoadersForNode24(): Promise<void> {
+  if (pierreThemesPatched) {
+    return;
+  }
+  if (!pierreThemePatchPromise) {
+    pierreThemePatchPromise = (async () => {
+      try {
+        const { RegisteredCustomThemes } = await loadPierreDiffs();
+        const darkThemePath = themeRequire.resolve("@pierre/theme/themes/pierre-dark.json");
+        const lightThemePath = themeRequire.resolve("@pierre/theme/themes/pierre-light.json");
+        RegisteredCustomThemes.set("pierre-dark", createThemeLoader("pierre-dark", darkThemePath));
+        RegisteredCustomThemes.set(
+          "pierre-light",
+          createThemeLoader("pierre-light", lightThemePath),
+        );
+        pierreThemesPatched = true;
+      } catch {
+        // Keep upstream loaders if theme files cannot be resolved.
+      }
+    })();
+  }
+  await pierreThemePatchPromise;
+}
 
 function escapeCssString(value: string): string {
   return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
@@ -329,8 +405,6 @@ async function renderBeforeAfterDiff(
   options: DiffRenderOptions,
   target: DiffRenderTarget,
 ): Promise<{ viewerBodyHtml?: string; imageBodyHtml?: string; fileCount: number }> {
-  ensurePierreThemesRegistered();
-
   const lang = await normalizeSupportedLanguageHint(input.lang);
   const fileName = resolveBeforeAfterFileName({ input, lang });
   const oldFile: FileContents = {
@@ -402,8 +476,7 @@ async function renderPatchDiff(
   options: DiffRenderOptions,
   target: DiffRenderTarget,
 ): Promise<{ viewerBodyHtml?: string; imageBodyHtml?: string; fileCount: number }> {
-  ensurePierreThemesRegistered();
-
+  const { parsePatchFiles } = await loadPierreDiffs();
   const files = parsePatchFiles(input.patch).flatMap((entry) => entry.files ?? []);
   if (files.length === 0) {
     throw new Error("Patch input did not contain any file diffs.");
@@ -510,9 +583,6 @@ export async function renderDiffDocument(
   };
 }
 
-type PreloadedFileDiffResult = Awaited<ReturnType<typeof preloadFileDiff>>;
-type PreloadedMultiFileDiffResult = Awaited<ReturnType<typeof preloadMultiFileDiff>>;
-
 function shouldFallbackToClientHydration(error: unknown): boolean {
   return (
     error instanceof TypeError &&
@@ -524,6 +594,8 @@ async function preloadFileDiffWithFallback(params: {
   fileDiff: FileDiffMetadata;
   options: DiffViewerOptions;
 }): Promise<PreloadedFileDiffResult> {
+  await ensurePierreThemeLoadersForNode24();
+  const { preloadFileDiff } = await loadPierreDiffsSsr();
   try {
     return await preloadFileDiff(params);
   } catch (error) {
@@ -542,6 +614,8 @@ async function preloadMultiFileDiffWithFallback(params: {
   newFile: FileContents;
   options: DiffViewerOptions;
 }): Promise<PreloadedMultiFileDiffResult> {
+  await ensurePierreThemeLoadersForNode24();
+  const { preloadMultiFileDiff } = await loadPierreDiffsSsr();
   try {
     return await preloadMultiFileDiff(params);
   } catch (error) {
