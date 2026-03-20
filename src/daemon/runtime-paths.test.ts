@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const fsMocks = vi.hoisted(() => ({
   access: vi.fn(),
+  realpath: vi.fn(),
 }));
 
 vi.mock("node:fs/promises", async () => {
@@ -11,8 +12,10 @@ vi.mock("node:fs/promises", async () => {
     default: {
       ...actual,
       access: fsMocks.access,
+      realpath: fsMocks.realpath,
     },
     access: fsMocks.access,
+    realpath: fsMocks.realpath,
   };
 });
 
@@ -22,6 +25,11 @@ import {
   resolveStableNodePath,
   resolveSystemNodeInfo,
 } from "./runtime-paths.js";
+
+beforeEach(() => {
+  fsMocks.access.mockRejectedValue(new Error("missing"));
+  fsMocks.realpath.mockImplementation(async (target: string) => target);
+});
 
 afterEach(() => {
   vi.resetAllMocks();
@@ -34,6 +42,7 @@ function mockNodePathPresent(...nodePaths: string[]) {
     }
     throw new Error("missing");
   });
+  fsMocks.realpath.mockImplementation(async (target: string) => target);
 }
 
 describe("resolvePreferredNodePath", () => {
@@ -193,6 +202,36 @@ describe("resolveStableNodePath", () => {
     expect(result).toBe(fnmPath);
   });
 
+  it("resolves nvm version paths to the current alias when it matches", async () => {
+    const versionedNode = "/home/test/.nvm/versions/node/v24.13.0/bin/node";
+    const stableNode = "/home/test/.nvm/current/bin/node";
+    mockNodePathPresent(stableNode);
+    fsMocks.realpath.mockImplementation(async (target: string) => {
+      if (target === versionedNode || target === stableNode) {
+        return versionedNode;
+      }
+      return target;
+    });
+
+    const result = await resolveStableNodePath(versionedNode);
+    expect(result).toBe(stableNode);
+  });
+
+  it("resolves fnm version paths to the current alias when it matches", async () => {
+    const versionedNode = "/Users/test/.fnm/node-versions/v24.11.1/installation/bin/node";
+    const stableNode = "/Users/test/.fnm/current/bin/node";
+    mockNodePathPresent(stableNode);
+    fsMocks.realpath.mockImplementation(async (target: string) => {
+      if (target === versionedNode || target === stableNode) {
+        return versionedNode;
+      }
+      return target;
+    });
+
+    const result = await resolveStableNodePath(versionedNode);
+    expect(result).toBe(stableNode);
+  });
+
   it("returns system paths unchanged", async () => {
     const result = await resolveStableNodePath("/opt/homebrew/bin/node");
     expect(result).toBe("/opt/homebrew/bin/node");
@@ -213,6 +252,30 @@ describe("resolvePreferredNodePath — Homebrew Cellar", () => {
       platform: "darwin",
       execFile,
       execPath: cellarNode,
+    });
+
+    expect(result).toBe(stableNode);
+  });
+
+  it("resolves nvm execPath to the current alias", async () => {
+    const versionedNode = "/home/test/.nvm/versions/node/v24.13.0/bin/node";
+    const stableNode = "/home/test/.nvm/current/bin/node";
+    mockNodePathPresent(stableNode);
+    fsMocks.realpath.mockImplementation(async (target: string) => {
+      if (target === versionedNode || target === stableNode) {
+        return versionedNode;
+      }
+      return target;
+    });
+
+    const execFile = vi.fn().mockResolvedValue({ stdout: "24.13.0\n", stderr: "" });
+
+    const result = await resolvePreferredNodePath({
+      env: {},
+      runtime: "node",
+      platform: "linux",
+      execFile,
+      execPath: versionedNode,
     });
 
     expect(result).toBe(stableNode);

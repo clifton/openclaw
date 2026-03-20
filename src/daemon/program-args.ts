@@ -7,6 +7,7 @@ import {
   findFirstAccessibleGatewayEntrypoint,
   isGatewayDistEntrypointPath,
 } from "./gateway-entrypoint.js";
+import { resolveOpenClawPackageRoot } from "../infra/openclaw-root.js";
 import { isBunRuntime, isNodeRuntime } from "./runtime-binary.js";
 
 type GatewayProgramArgs = {
@@ -18,6 +19,64 @@ type GatewayRuntimePreference = "auto" | "node" | "bun";
 
 export const OPENCLAW_WRAPPER_ENV_KEY = "OPENCLAW_WRAPPER";
 
+function buildPackageDistCandidates(packageRoot: string): string[] {
+  const distDir = path.resolve(packageRoot, "dist");
+  return [
+    path.join(distDir, "index.js"),
+    path.join(distDir, "index.mjs"),
+    path.join(distDir, "entry.js"),
+    path.join(distDir, "entry.mjs"),
+  ];
+}
+
+async function resolveGlobalPnpmPackageRoot(): Promise<string | null> {
+  const { execFileSync } = await import("node:child_process");
+  try {
+    const output = execFileSync("pnpm", ["root", "-g"], { encoding: "utf8" }).trim();
+    const globalRoot = output.split(/\r?\n/)[0]?.trim();
+    if (!globalRoot) {
+      return null;
+    }
+    return path.join(globalRoot, "openclaw");
+  } catch {
+    return null;
+  }
+}
+
+async function resolveLinkedGlobalCliEntrypoint(normalizedArgv1: string): Promise<string | null> {
+  const currentPackageRoot = await resolveOpenClawPackageRoot({
+    argv1: normalizedArgv1,
+    cwd: process.cwd(),
+  });
+  if (!currentPackageRoot) {
+    return null;
+  }
+
+  const globalPackageRoot = await resolveGlobalPnpmPackageRoot();
+  if (!globalPackageRoot) {
+    return null;
+  }
+
+  const [currentPackageRootRealpath, globalPackageRootRealpath] = await Promise.all([
+    resolveRealpathSafe(currentPackageRoot),
+    resolveRealpathSafe(globalPackageRoot),
+  ]);
+  if (path.resolve(currentPackageRootRealpath) !== path.resolve(globalPackageRootRealpath)) {
+    return null;
+  }
+
+  for (const candidate of buildPackageDistCandidates(globalPackageRoot)) {
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {
+      // keep going
+    }
+  }
+
+  return null;
+}
+
 async function resolveCliEntrypointPathForService(): Promise<string> {
   const argv1 = process.argv[1];
   if (!argv1) {
@@ -25,6 +84,10 @@ async function resolveCliEntrypointPathForService(): Promise<string> {
   }
 
   const normalized = path.resolve(argv1);
+  const linkedGlobalEntrypoint = await resolveLinkedGlobalCliEntrypoint(normalized);
+  if (linkedGlobalEntrypoint) {
+    return linkedGlobalEntrypoint;
+  }
   const resolvedPath = await resolveRealpathSafe(normalized);
   const looksLikeDist = isGatewayDistEntrypointPath(resolvedPath);
   if (looksLikeDist) {
@@ -101,14 +164,7 @@ function buildDistCandidates(...inputs: string[]): string[] {
 }
 
 function appendDistCandidates(candidates: string[], seen: Set<string>, baseDir: string): void {
-  const distDir = path.resolve(baseDir, "dist");
-  const distEntries = [
-    path.join(distDir, "index.js"),
-    path.join(distDir, "index.mjs"),
-    path.join(distDir, "entry.js"),
-    path.join(distDir, "entry.mjs"),
-  ];
-  for (const entry of distEntries) {
+  for (const entry of buildPackageDistCandidates(baseDir)) {
     if (seen.has(entry)) {
       continue;
     }
