@@ -40,6 +40,17 @@ const IDENTIFIER_PRESERVATION_INSTRUCTIONS =
   "Preserve all opaque identifiers exactly as written (no shortening or reconstruction), " +
   "including UUIDs, hashes, IDs, hostnames, IPs, ports, URLs, and file names.";
 
+const generateSummaryWithPreviousSummary = generateSummary as (
+  currentMessages: AgentMessage[],
+  model: NonNullable<ExtensionContext["model"]>,
+  reserveTokens: number,
+  apiKey: string,
+  headers?: Record<string, string>,
+  signal?: AbortSignal,
+  customInstructions?: string,
+  previousSummary?: string,
+) => Promise<string>;
+
 export type CompactionSummarizationInstructions = {
   identifierPolicy?: AgentCompactionIdentifierPolicy;
   identifierInstructions?: string;
@@ -317,7 +328,7 @@ async function summarizeChunks(params: {
   for (const chunk of chunks) {
     summary = await retryAsync(
       () =>
-        generateSummary(
+        generateSummaryWithPreviousSummary(
           chunk,
           params.model,
           params.reserveTokens,

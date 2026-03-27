@@ -46,7 +46,7 @@ function createRateLimitError(
   const RateLimitErrorCtor = RateLimitError as unknown as new (
     response: Response,
     body: { message: string; retry_after: number; global: boolean },
-    request?: Request,
+    request: Request,
   ) => RateLimitError;
   return new RateLimitErrorCtor(response, body, fallbackRequest);
 }
