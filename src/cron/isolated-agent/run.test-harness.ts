@@ -57,6 +57,7 @@ export const getCliSessionIdMock = createMock();
 export const updateSessionStoreMock = createMock();
 export const resolveCronSessionMock = createMock();
 export const logWarnMock = createMock();
+export const isTransientHttpErrorMock = createMock();
 export const countActiveDescendantRunsMock = createMock();
 export const listDescendantRunsForRequesterMock = createMock();
 export const pickLastNonEmptyTextFromPayloadsMock = createMock();
@@ -171,6 +172,7 @@ vi.mock("./run-execution.runtime.js", () => ({
   runWithModelFallback: runWithModelFallbackMock,
   isCliProvider: isCliProviderMock,
   runEmbeddedPiAgent: runEmbeddedPiAgentMock,
+  isTransientHttpError: isTransientHttpErrorMock,
   countActiveDescendantRuns: countActiveDescendantRunsMock,
   listDescendantRunsForRequester: listDescendantRunsForRequesterMock,
   normalizeVerboseLevel: normalizeVerboseLevelMock,
@@ -351,6 +353,10 @@ function resetRunExecutionMocks(): void {
   normalizeVerboseLevelMock.mockImplementation((value: unknown) => value ?? "off");
   resolveSessionTranscriptPathMock.mockReturnValue("/tmp/transcript.jsonl");
   registerAgentRunContextMock.mockReturnValue(undefined);
+  isTransientHttpErrorMock.mockReset();
+  isTransientHttpErrorMock.mockImplementation(
+    (raw: string) => /^(408|409|425|429|500|502|503|504|529)\b/.test(raw.trim()),
+  );
   runWithModelFallbackMock.mockReset();
   runWithModelFallbackMock.mockResolvedValue(makeDefaultModelFallbackResult());
   runEmbeddedPiAgentMock.mockReset();

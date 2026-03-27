@@ -4,6 +4,7 @@ export { resolveCronAgentLane } from "../../agents/lanes.js";
 export { LiveSessionModelSwitchError } from "../../agents/live-model-switch-error.js";
 export { runWithModelFallback } from "../../agents/model-fallback.js";
 export { isCliProvider } from "../../agents/model-selection-cli.js";
+export { isTransientHttpError } from "../../agents/pi-embedded-helpers.js";
 export { normalizeVerboseLevel } from "../../auto-reply/thinking.shared.js";
 export { resolveSessionTranscriptPath } from "../../config/sessions/paths.js";
 export { registerAgentRunContext } from "../../infra/agent-events.js";

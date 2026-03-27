@@ -12,9 +12,10 @@ import {
 } from "./channel-output-policy.js";
 import { resolveCronPayloadOutcome } from "./helpers.js";
 import {
+  isTransientHttpError,
+  LiveSessionModelSwitchError,
   getCliSessionId,
   isCliProvider,
-  LiveSessionModelSwitchError,
   logWarn,
   normalizeVerboseLevel,
   registerAgentRunContext,
@@ -34,9 +35,12 @@ import { syncCronSessionLiveSelection } from "./run-session-state.js";
 import { isLikelyInterimCronMessage } from "./subagent-followup-hints.js";
 
 type AgentTurnPayload = Extract<CronJob["payload"], { kind: "agentTurn" }> | null;
-type CronPromptRunResult = Awaited<ReturnType<typeof runCliAgent>>;
 type CronEmbeddedRuntime = typeof import("./run-embedded.runtime.js");
 type CronSubagentRegistryRuntime = typeof import("./run-subagent-registry.runtime.js");
+type CronPromptRunResult =
+  | Awaited<ReturnType<typeof runCliAgent>>
+  | Awaited<ReturnType<CronEmbeddedRuntime["runEmbeddedPiAgent"]>>;
+const TRANSIENT_HTTP_RETRY_DELAY_MS = 2_500;
 
 const cronEmbeddedRuntimeLoader = createLazyImportLoader<CronEmbeddedRuntime>(
   () => import("./run-embedded.runtime.js"),
@@ -343,9 +347,45 @@ export async function executeCronRun(params: {
   const runStartedAt = params.runStartedAt ?? Date.now();
   const MAX_MODEL_SWITCH_RETRIES = 2;
   let modelSwitchRetries = 0;
+  const runPromptWithTransientHttpRetry = async (promptText: string) => {
+    let didRetryTransientHttpError = false;
+    while (true) {
+      try {
+        await executor.runPrompt(promptText);
+        return;
+      } catch (err) {
+        if (err instanceof LiveSessionModelSwitchError) {
+          throw err;
+        }
+        const message = err instanceof Error ? err.message : String(err);
+        if (isTransientHttpError(message) && !didRetryTransientHttpError && !params.isAborted()) {
+          didRetryTransientHttpError = true;
+          logWarn(
+            `[cron:${params.job.id}] Transient HTTP provider error before reply (${message}). Retrying once in ${TRANSIENT_HTTP_RETRY_DELAY_MS}ms.`,
+          );
+          await new Promise<void>((resolve) => {
+            const timer = setTimeout(resolve, TRANSIENT_HTTP_RETRY_DELAY_MS);
+            params.abortSignal?.addEventListener(
+              "abort",
+              () => {
+                clearTimeout(timer);
+                resolve();
+              },
+              { once: true },
+            );
+          });
+          if (params.isAborted()) {
+            throw new Error(params.abortReason(), { cause: err });
+          }
+          continue;
+        }
+        throw err;
+      }
+    }
+  };
   while (true) {
     try {
-      await executor.runPrompt(params.commandBody);
+      await runPromptWithTransientHttpRetry(params.commandBody);
       break;
     } catch (err) {
       if (!(err instanceof LiveSessionModelSwitchError)) {
