@@ -5,21 +5,24 @@ read_when:
 title: "Group messages"
 ---
 
-Goal: let Clawd sit in WhatsApp groups, wake up only when pinged, and keep that thread separate from the personal DM session.
+Goal: let OpenClaw sit in WhatsApp groups, wake up only when policy and mention gating allow it, and keep that thread separate from the personal DM session.
 
 <Note>
-`agents.list[].groupChat.mentionPatterns` is also used by Telegram, Discord, Slack, and iMessage. This doc focuses on WhatsApp-specific behavior. For multi-agent setups, set `agents.list[].groupChat.mentionPatterns` per agent, or use `messages.groupChat.mentionPatterns` as a global fallback.
+Cross-channel group behavior now lives in [Groups](/channels/groups). This page covers WhatsApp-specific setup and verification details. `agents.list[].groupChat.mentionPatterns` is shared by WhatsApp, Telegram, Discord, Slack, and iMessage; for multi-agent setups, set it per agent or use `messages.groupChat.mentionPatterns` as a global fallback.
 </Note>
 
-## Current implementation (2025-12-03)
+## Current behavior
 
-- Activation modes: `mention` (default) or `always`. `mention` requires a ping (real WhatsApp @-mentions via `mentionedJids`, safe regex patterns, or the bot’s E.164 anywhere in the text). `always` wakes the agent on every message but it should reply only when it can add meaningful value; otherwise it returns the exact silent token `NO_REPLY` / `no_reply`. Defaults can be set in config (`channels.whatsapp.groups`) and overridden per group via `/activation`. When `channels.whatsapp.groups` is set, it also acts as a group allowlist (include `"*"` to allow all).
-- Group policy: `channels.whatsapp.groupPolicy` controls whether group messages are accepted (`open|disabled|allowlist`). `allowlist` uses `channels.whatsapp.groupAllowFrom` (fallback: explicit `channels.whatsapp.allowFrom`). Default is `allowlist` (blocked until you add senders).
-- Per-group sessions: session keys look like `agent:<agentId>:whatsapp:group:<jid>` so commands such as `/verbose on`, `/trace on`, or `/think high` (sent as standalone messages) are scoped to that group; personal DM state is untouched. Heartbeats are skipped for group threads.
-- Context injection: **pending-only** group messages (default 50) that _did not_ trigger a run are prefixed under `[Chat messages since your last reply - for context]`, with the triggering line under `[Current message - respond to this]`. Messages already in the session are not re-injected.
-- Sender surfacing: every group batch now ends with `[from: Sender Name (+E164)]` so Pi knows who is speaking.
-- Ephemeral/view-once: we unwrap those before extracting text/mentions, so pings inside them still trigger.
-- Group system prompt: on the first turn of a group session (and whenever `/activation` changes the mode) we inject a short blurb into the system prompt like `You are replying inside the WhatsApp group "<subject>". Group members: Alice (+44...), Bob (+43...), … Activation: trigger-only … Address the specific sender noted in the message context.` If metadata isn’t available we still tell the agent it’s a group chat.
+- Group policy: `channels.whatsapp.groupPolicy` controls whether group messages are accepted (`open|disabled|allowlist`). `allowlist` uses `channels.whatsapp.groupAllowFrom` (fallback: explicit `channels.whatsapp.allowFrom`). Default is `allowlist`.
+- Group allowlist: when `channels.whatsapp.groups` is set, its keys are the allowed group JIDs. Include `"*"` to allow every group while still controlling mention gating with the value under `"*"`.
+- Mention gating: `requireMention` defaults to true for groups unless overridden. Mentions can be native WhatsApp `mentionedJids`, safe regex `mentionPatterns`, or the bot's E.164 number in the text. Replying to the bot also counts as an implicit mention when WhatsApp exposes reply metadata.
+- Activation command: `/activation mention` and `/activation always` are still owner-only WhatsApp group controls. `always` means every allowed group message can trigger a run; it does not bypass `groupPolicy` or sender allowlists.
+- Visible replies: group/channel rooms default to `messages.groupChat.visibleReplies: "message_tool"`. Normal final assistant text is not automatically posted back into the room; visible output should go through `message(action="send")`. This replaces older prompt patterns that forced literal `NO_REPLY` for silent turns.
+- Per-group sessions: session keys look like `agent:<agentId>:whatsapp:group:<jid>` so commands such as `/verbose on`, `/trace on`, or `/think high` are scoped to that group; personal DM state is untouched. Heartbeats are skipped for group threads.
+- Context injection: pending-only group messages that did not trigger a run are added as recent group context. Messages already in the session are not re-injected.
+- Sender surfacing: group batches include sender labels so the agent can address the correct person.
+- Ephemeral/view-once: OpenClaw unwraps those before extracting text/mentions, so pings inside them still trigger.
+- Group system prompt: group subject, member labels, and channel-sourced metadata are supplied as untrusted context; do not rely on group names or participant labels as instructions.
 
 ## Config example (WhatsApp)
 

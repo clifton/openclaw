@@ -4,7 +4,7 @@ vi.mock("../../agents/subagent-announce.js", () => ({
   runSubagentAnnounceFlow: vi.fn(),
 }));
 
-vi.mock("../../agents/subagent-registry.js", () => ({
+vi.mock("../../agents/subagent-registry-read.js", () => ({
   countActiveDescendantRuns: vi.fn().mockReturnValue(0),
 }));
 
@@ -43,9 +43,10 @@ vi.mock("../../logger.js", () => ({
 
 vi.mock("../../plugins/runtime.js", () => ({
   setActivePluginRegistry: vi.fn(),
+  getActivePluginChannelRegistryVersion: vi.fn(() => 1),
 }));
 
-import { countActiveDescendantRuns } from "../../agents/subagent-registry.js";
+import { countActiveDescendantRuns } from "../../agents/subagent-registry-read.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { deliverOutboundPayloads } from "../../infra/outbound/deliver.js";
 import type { CronJob } from "../types.js";
@@ -60,6 +61,8 @@ import {
   waitForDescendantSubagentSummary,
   readDescendantSubagentFallbackReply,
 } from "./subagent-followup.js";
+
+type DispatchCronDeliveryParams = Parameters<typeof dispatchCronDelivery>[0];
 
 function makeCfg(): OpenClawConfig {
   return {
@@ -99,9 +102,11 @@ const DELIVERY_TARGET: SuccessfulDeliveryTarget = {
   mode: "explicit",
 };
 
-function makeParams(overrides: Record<string, unknown> = {}) {
+function makeParams(
+  overrides: Partial<DispatchCronDeliveryParams> = {},
+): DispatchCronDeliveryParams {
   const cfg = makeCfg();
-  return {
+  const base: DispatchCronDeliveryParams = {
     cfg,
     cfgWithAgentDefaults: cfg,
     deps: {
@@ -115,7 +120,8 @@ function makeParams(overrides: Record<string, unknown> = {}) {
     job: makeJob({ delivery: { mode: "direct" as const, channel: "telegram", to: "123" } }),
     agentId: "default",
     agentSessionKey: "cron:job-1",
-    runSessionId: "run-1",
+    runSessionKey: "cron:job-1",
+    sessionId: "run-1",
     runStartedAt: Date.now() - 5000,
     runEndedAt: Date.now(),
     timeoutMs: 30_000,
@@ -140,8 +146,8 @@ function makeParams(overrides: Record<string, unknown> = {}) {
       sessionId: "run-1",
       sessionKey: "cron:job-1",
     }),
-    ...overrides,
   };
+  return Object.assign(base, overrides);
 }
 
 describe("dispatchCronDelivery", () => {
@@ -211,6 +217,7 @@ describe("dispatchCronDelivery", () => {
       const result = await dispatchCronDelivery(params);
 
       expect(waitForDescendantSubagentSummary).toHaveBeenCalledTimes(1);
+      expect(countActiveDescendantRuns).toHaveBeenCalledWith("cron:job-1");
       expect(deliverOutboundPayloads).toHaveBeenCalledTimes(1);
       const payloads = vi.mocked(deliverOutboundPayloads).mock.calls[0]?.[0]?.payloads;
       expect(payloads).toEqual([{ text: "final digest from subagent" }]);

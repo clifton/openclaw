@@ -111,6 +111,8 @@ See: [Broadcast Groups](/channels/broadcast-groups).
 
 - `agents.list`: named agent definitions (workspace, model, etc.).
 - `bindings`: map inbound channels/accounts/peers to agents.
+- `bindings[].type` is optional. Missing type means `"route"`; use `"acp"` only for persistent ACP conversation bindings.
+- Route bindings participate in the match order above. ACP bindings resolve by exact conversation identity and are intended for fixed channels, threads, groups, or Telegram forum topics.
 
 Example:
 
@@ -120,8 +122,12 @@ Example:
     list: [{ id: "support", name: "Support", workspace: "~/.openclaw/workspace-support" }],
   },
   bindings: [
-    { match: { channel: "slack", teamId: "T123" }, agentId: "support" },
-    { match: { channel: "telegram", peer: { kind: "group", id: "-100123" } }, agentId: "support" },
+    { type: "route", match: { channel: "slack", teamId: "T123" }, agentId: "support" },
+    {
+      type: "route",
+      match: { channel: "telegram", peer: { kind: "group", id: "-100123" } },
+      agentId: "support",
+    },
   ],
 }
 ```
