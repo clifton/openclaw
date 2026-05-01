@@ -464,6 +464,10 @@ describe("runCodexAppServerAttempt", () => {
     expect(dynamicToolNames).toContain("message");
   });
 
+  it("defaults the Codex turn completion idle watchdog to 300 seconds", () => {
+    expect(__testing.CODEX_TURN_COMPLETION_IDLE_TIMEOUT_MS).toBe(300_000);
+  });
+
   it("returns a failed dynamic tool response when an app-server tool call exceeds the deadline", async () => {
     vi.useFakeTimers();
     let capturedSignal: AbortSignal | undefined;
