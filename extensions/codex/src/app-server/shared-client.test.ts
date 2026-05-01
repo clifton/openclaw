@@ -210,7 +210,7 @@ describe("shared Codex app-server client", () => {
     );
   });
 
-  it("restarts the shared client when the bridged auth token changes", async () => {
+  it("keeps distinct shared clients when the bridged auth token changes", async () => {
     const first = createClientHarness();
     const second = createClientHarness();
     const startSpy = vi
@@ -249,10 +249,52 @@ describe("shared Codex app-server client", () => {
     await expect(secondList).resolves.toEqual({ models: [] });
 
     expect(startSpy).toHaveBeenCalledTimes(2);
+    expect(first.process.kill).not.toHaveBeenCalled();
+    expect(second.process.kill).not.toHaveBeenCalled();
+
+    clearSharedCodexAppServerClient();
     expect(first.process.kill).toHaveBeenCalledWith("SIGTERM");
+    expect(second.process.kill).toHaveBeenCalledWith("SIGTERM");
   });
 
-  it("does not let a superseded shared-client failure tear down the newer client", async () => {
+  it("keeps concurrent shared clients isolated by agent dir", async () => {
+    const family = createClientHarness();
+    const finances = createClientHarness();
+    const startSpy = vi
+      .spyOn(CodexAppServerClient, "start")
+      .mockReturnValueOnce(family.client)
+      .mockReturnValueOnce(finances.client);
+
+    const familyList = listCodexAppServerModels({
+      timeoutMs: 1000,
+      authProfileId: "openai-codex:cliftonk@gmail.com",
+      agentDir: "/tmp/openclaw-agent-family",
+    });
+    const financesList = listCodexAppServerModels({
+      timeoutMs: 1000,
+      authProfileId: "openai-codex:cliftonk@gmail.com",
+      agentDir: "/tmp/openclaw-agent-finances",
+    });
+
+    await sendInitializeResult(family, "openclaw/0.125.0 (macOS; test)");
+    await sendInitializeResult(finances, "openclaw/0.125.0 (macOS; test)");
+    await sendEmptyModelList(family);
+    await sendEmptyModelList(finances);
+
+    await expect(Promise.all([familyList, financesList])).resolves.toEqual([
+      { models: [] },
+      { models: [] },
+    ]);
+    expect(startSpy).toHaveBeenCalledTimes(2);
+    expect(family.process.kill).not.toHaveBeenCalled();
+    expect(finances.process.kill).not.toHaveBeenCalled();
+
+    clearSharedCodexAppServerClient();
+    expect(family.process.kill).toHaveBeenCalledWith("SIGTERM");
+    expect(finances.process.kill).toHaveBeenCalledWith("SIGTERM");
+  });
+
+  it("does not let one keyed shared-client failure tear down another client", async () => {
     const first = createClientHarness();
     const second = createClientHarness();
     vi.spyOn(CodexAppServerClient, "start")
@@ -286,12 +328,12 @@ describe("shared Codex app-server client", () => {
     });
     await vi.waitFor(() => expect(second.writes.length).toBeGreaterThanOrEqual(1));
 
-    await expect(firstFailure).resolves.toBeInstanceOf(Error);
-
     await sendInitializeResult(second, "openclaw/0.125.0 (macOS; test)");
     await sendEmptyModelList(second);
     await expect(secondList).resolves.toEqual({ models: [] });
 
+    first.client.close();
+    await expect(firstFailure).resolves.toBeInstanceOf(Error);
     expect(second.process.kill).not.toHaveBeenCalled();
   });
 
