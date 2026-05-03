@@ -632,12 +632,12 @@ function resolveSessionPinnedAgentHarnessId(params: {
   if (params.sessionEntry?.sessionId !== params.sessionId) {
     return resolveConfiguredAgentHarnessId(params);
   }
-  if (params.sessionEntry.agentHarnessId) {
-    return params.sessionEntry.agentHarnessId;
-  }
   const configuredAgentHarnessId = resolveConfiguredAgentHarnessId(params);
   if (configuredAgentHarnessId) {
     return configuredAgentHarnessId;
+  }
+  if (params.sessionEntry.agentHarnessId) {
+    return params.sessionEntry.agentHarnessId;
   }
   if (!params.sessionHasHistory) {
     return undefined;
